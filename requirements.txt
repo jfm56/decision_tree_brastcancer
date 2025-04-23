@@ -1,0 +1,6 @@
+numpy
+pandas
+pytest
+pylint
+coverage
+scikit-learn # for data loading only, not for modeling

@@ -1,0 +1,26 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*$py.class
+
+# Data and output
+.coverage
+coverage.xml
+htmlcov/
+data/
+.DS_Store
+
+# Jupyter and IPython
+.ipynb_checkpoints/
+
+# IDE/editor configs
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# System files
+Thumbs.db
