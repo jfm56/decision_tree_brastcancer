@@ -7,7 +7,8 @@ from visualization import (
     plot_binned_feature_counts,
     plot_confusion_matrix,
     print_tree,
-    plot_feature_importance
+    plot_feature_importance,
+    plot_tree_graphical
 )
 
 if __name__ == "__main__":
@@ -57,3 +58,9 @@ if __name__ == "__main__":
     # 5. Print tree structure
     print("\nDecision Tree Structure:")
     print_tree(clf.root)
+
+    # 6. Graphical tree visualization
+    print("\nSaving graphical decision tree as PDF (tree_visualization.pdf)...")
+    # Save a readable PDF of the tree (top 3 levels, large page). Adjust max_depth/fig_width as needed.
+    plot_tree_graphical(clf.root, max_depth=4, out_file="tree_visualization.pdf", fig_width=48, fig_height=28, xlim=44, ylim=28)
+    print("Graphical tree (top 4 levels, extra spacing) saved to tree_visualization.pdf. For more/less detail, adjust max_depth or figure size in train.py.")
