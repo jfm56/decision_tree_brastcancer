@@ -1,6 +1,6 @@
+from collections import Counter
 import numpy as np
 import pandas as pd
-from collections import Counter
 
 class DecisionTreeNode:
     def __init__(self, feature=None, threshold=None, children=None, *, value=None):
@@ -12,74 +12,113 @@ class DecisionTreeNode:
     def is_leaf(self):
         return self.value is not None
 
+    def get_feature(self):
+        """Return the feature this node splits on (or None if leaf)."""
+        return self.feature
+
 class DecisionTreeClassifier:
-    def __init__(self, max_depth=None):
+    def __init__(self, max_depth=None, criterion='entropy'):
+        """
+        criterion: 'entropy' or 'gini' (default: 'entropy')
+        """
         self.max_depth = max_depth
+        self.criterion = criterion
         self.root = None
         self._feature_importance = None
+        self._majority_class = None
 
-    def fit(self, X, y):
-        self._feature_importance = {col: 0.0 for col in X.columns}
-        self._majority_class = Counter(y).most_common(1)[0][0]
-        self.root = self._build_tree(X, y, depth=0, feature_importance=self._feature_importance)
+    def get_params(self, deep=False):
+        return {'max_depth': self.max_depth, 'criterion': self.criterion}
 
-    def _entropy(self, y):
-        counts = np.bincount(pd.Categorical(y).codes)
+    def set_params(self, **params):
+        for key, value in params.items():
+            setattr(self, key, value)
+        return self
+
+    def fit(self, x_data, y_data):
+        self._feature_importance = {
+            col: 0.0 for col in x_data.columns
+        }
+        self._majority_class = Counter(y_data).most_common(1)[0][0]
+        self.root = self._build_tree(
+            x_data, y_data, depth=0, feature_importance=self._feature_importance
+        )
+
+    def _entropy(self, target):
+        counts = np.bincount(pd.Categorical(target).codes)
         probs = counts / counts.sum()
         return -np.sum([p * np.log2(p) for p in probs if p > 0])
 
-    def _information_gain(self, X_col, y):
-        values = X_col.unique()
-        entropy_before = self._entropy(y)
-        weighted_entropy = 0
-        for val in values:
-            subset = y[X_col == val]
-            weighted_entropy += (len(subset) / len(y)) * self._entropy(subset)
-        return entropy_before - weighted_entropy
+    def _gini(self, target):
+        counts = np.bincount(pd.Categorical(target).codes)
+        probs = counts / counts.sum()
+        return 1.0 - np.sum([p ** 2 for p in probs])
 
-    def _best_split(self, X, y):
+    def _impurity(self, target):
+        if self.criterion == 'entropy':
+            return self._entropy(target)
+        elif self.criterion == 'gini':
+            return self._gini(target)
+        else:
+            raise ValueError(f"Unknown criterion: {self.criterion}")
+
+    def _information_gain(self, feature_col, target):
+        values = feature_col.unique()
+        impurity_before = self._impurity(target)
+        weighted_impurity = 0
+        for val in values:
+            subset = target[feature_col == val]
+            weighted_impurity += (
+                len(subset) / len(target)
+            ) * self._impurity(subset)
+        return impurity_before - weighted_impurity
+
+    def _best_split(self, features, target):
         best_gain = -1
         best_feature = None
         best_gain_per_feature = {}
-        for feature in X.columns:
-            gain = self._information_gain(X[feature], y)
+        for feature in features.columns:
+            gain = self._information_gain(features[feature], target)
             best_gain_per_feature[feature] = gain
             if gain > best_gain:
                 best_gain = gain
                 best_feature = feature
         return best_feature, best_gain_per_feature
 
-    def _build_tree(self, X, y, depth, feature_importance=None):
-        if len(set(y)) == 1:
-            return DecisionTreeNode(value=y.iloc[0])
+    def _build_tree(self, features, target, depth, feature_importance=None):
+        if len(set(target)) == 1:
+            return DecisionTreeNode(value=target.iloc[0])
         if self.max_depth is not None and depth >= self.max_depth:
-            return DecisionTreeNode(value=Counter(y).most_common(1)[0][0])
-        if X.shape[1] == 0:
-            return DecisionTreeNode(value=Counter(y).most_common(1)[0][0])
-        feature, gains = self._best_split(X, y)
+            return DecisionTreeNode(value=Counter(target).most_common(1)[0][0])
+        if features.shape[1] == 0:
+            return DecisionTreeNode(value=Counter(target).most_common(1)[0][0])
+        feature, gains = self._best_split(features, target)
         if feature is None:
-            return DecisionTreeNode(value=Counter(y).most_common(1)[0][0])
+            return DecisionTreeNode(value=Counter(target).most_common(1)[0][0])
         if feature_importance is not None:
             feature_importance[feature] += gains[feature]
         children = {}
-        for val in X[feature].unique():
-            idx = X[feature] == val
-            child = self._build_tree(X[idx].drop(columns=[feature]), y[idx], depth+1, feature_importance=feature_importance)
+        for val in features[feature].unique():
+            idx = features[feature] == val
+            child = self._build_tree(
+                features[idx].drop(columns=[feature]),
+                target[idx],
+                depth+1,
+                feature_importance=feature_importance
+            )
             children[val] = child
         return DecisionTreeNode(feature=feature, children=children)
 
-    def predict_one(self, x):
+    def predict_one(self, features):
         node = self.root
         while not node.is_leaf():
-            val = x[node.feature]
-            node = node.children.get(val, None)
-            if node is None:
-                # Return majority class if unseen value encountered
+            if node.feature not in features:
                 return getattr(self, '_majority_class', None)
+            node = node.children.get(features[node.feature], node)
         return node.value
 
-    def predict(self, X):
-        return X.apply(self.predict_one, axis=1)
+    def predict(self, x_data):
+        return x_data.apply(self.predict_one, axis=1)
 
     def get_feature_importance(self):
         """
@@ -88,3 +127,8 @@ class DecisionTreeClassifier:
         if self._feature_importance is None:
             raise ValueError("Model must be fit before getting feature importance.")
         return self._feature_importance.copy()
+
+    def score(self, features, target):
+        """Dummy score method for sklearn compatibility."""
+        y_pred = self.predict(features)
+        return (y_pred == target).mean()

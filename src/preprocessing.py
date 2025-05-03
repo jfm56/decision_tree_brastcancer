@@ -1,19 +1,23 @@
 import pandas as pd
-import numpy as np
 
-BIN_LABELS = ['low', 'medium', 'high']
+BIN_LABELS = ['low', 'high']
 
 # Feature binning for all columns except target
-def bin_features(df, feature_cols):
-    binned_df = df.copy()
-    for col in feature_cols:
-        binned_df[col] = pd.qcut(binned_df[col], q=3, labels=BIN_LABELS)
-    return binned_df
+def bin_features(dataframe, feature_columns):
+    """Bin features into quantiles labeled as low, medium, high."""
+    binned_dataframe = dataframe.copy()
+    for column in feature_columns:
+        binned_dataframe[column] = pd.qcut(
+            binned_dataframe[column], q=2, labels=BIN_LABELS
+        )
+    return binned_dataframe
 
-def map_target(df, target_col='diagnosis'):
-    return df[target_col].map({'M': 'malignant', 'B': 'benign'})
+def map_target(dataframe, target_column='diagnosis'):
+    # Map target values to more descriptive labels
+    return dataframe[target_column].map({'M': 'malignant', 'B': 'benign'})
 
-def preprocess_data(df, feature_cols, target_col='diagnosis'):
-    df_binned = bin_features(df, feature_cols)
-    df_binned[target_col] = map_target(df_binned, target_col)
+def preprocess_data(df, feature_columns, target_column='diagnosis'):
+    # Preprocess data by binning features and mapping target values
+    df_binned = bin_features(df, feature_columns)
+    df_binned[target_column] = map_target(df_binned, target_column)
     return df_binned
