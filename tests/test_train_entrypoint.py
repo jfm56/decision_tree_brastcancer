@@ -20,7 +20,15 @@ def test_train_entry_testpoint(monkeypatch, capsys):
         def fit(self, X, y_test): self.root = None; self._y_test = y_test
         def predict(self, X):
             import pandas as pd
-            return pd.Series(self._y_test.values, index=X.index)
+            y = self._y_test
+            # Try to align by index if possible
+            if hasattr(y, 'reindex') and set(X.index).issubset(set(y.index)):
+                return y.reindex(X.index)
+            vals = y.values if hasattr(y, 'values') else y
+            if len(vals) >= len(X):
+                return pd.Series(vals[:len(X)], index=X.index)
+            else:
+                return pd.Series([vals[0]] * len(X), index=X.index)
 
     monkeypatch.setattr(dt_mod, 'DecisionTreeClassifier', Dummy_testDT)
 
