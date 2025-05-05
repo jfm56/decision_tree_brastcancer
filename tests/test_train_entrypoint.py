@@ -18,7 +18,10 @@ def test_train_entry_testpoint(monkeypatch, capsys):
     class Dummy_testDT:
         def __init__(self, *args, **kwargs): self.root = None; self._y_test = None
         def fit(self, X, y_test): self.root = None; self._y_test = y_test
-        def predict(self, X): return self._y_test
+        def predict(self, X):
+            import pandas as pd
+            return pd.Series(self._y_test.values, index=X.index)
+
     monkeypatch.setattr(dt_mod, 'DecisionTreeClassifier', Dummy_testDT)
 
     # Override visualization save to avoid file output
