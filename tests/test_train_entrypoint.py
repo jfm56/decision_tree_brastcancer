@@ -17,11 +17,13 @@ def test_train_entry_testpoint(monkeypatch, capsys):
     import src.decision_tree as dt_mod
     class Dummy_testDT:
         def __init__(self, *args, **kwargs): self.root = None; self._y_test = None
-        def fit(self, X, y_test): self.root = None; self._y_test = y_test
+        def fit(self, X, y_test):
+            self.root = None
+            self._y_test = y_test
+            self._feature_names = X.columns if hasattr(X, 'columns') else ['feat1', 'feat2']
         def predict(self, X):
             import pandas as pd
             y = self._y_test
-            # Try to align by index if possible
             if hasattr(y, 'reindex') and set(X.index).issubset(set(y.index)):
                 return y.reindex(X.index)
             vals = y.values if hasattr(y, 'values') else y
@@ -29,6 +31,10 @@ def test_train_entry_testpoint(monkeypatch, capsys):
                 return pd.Series(vals[:len(X)], index=X.index)
             else:
                 return pd.Series([vals[0]] * len(X), index=X.index)
+        def get_feature_importance(self):
+            import pandas as pd
+            names = getattr(self, '_feature_names', ['feat1', 'feat2'])
+            return pd.Series([0.0]*len(names), index=names)
 
     monkeypatch.setattr(dt_mod, 'DecisionTreeClassifier', Dummy_testDT)
 
