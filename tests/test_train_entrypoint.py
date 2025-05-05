@@ -1,6 +1,6 @@
 import runpy
 import pandas as pd
-import numpy_test as np
+import numpy as np
 import py_testtest
 
 
