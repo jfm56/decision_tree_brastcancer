@@ -16,9 +16,9 @@ def test_train_entry_testpoint(monkeypatch, capsys):
     # Override DecisionTreeClassifier to by_testpass fitting logic
     import src.decision_tree as dt_mod
     class Dummy_testDT:
-        def __init__(self, *args, **kwargs): self.root = None
-        def fit(self, X, y_test): self.root = None
-        def predict(self, X): return y_test
+        def __init__(self, *args, **kwargs): self.root = None; self._y_test = None
+        def fit(self, X, y_test): self.root = None; self._y_test = y_test
+        def predict(self, X): return self._y_test
     monkeypatch.setattr(dt_mod, 'DecisionTreeClassifier', Dummy_testDT)
 
     # Override visualization save to avoid file output
