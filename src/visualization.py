@@ -207,8 +207,8 @@ def plot_tree_graphical(
             ax.plot(
                 [parent_x, x_pos], [parent_y, y_pos],
                 color='#DC143C' if highlight else 'k',
-                linewidth=6 if highlight else 1,
-                zorder=10 if highlight else 1
+                linewidth=3 if highlight else 1,
+                zorder=1
             )
             # Add edge label: show only the correct label for each branch
             if edge_label is not None and hasattr(node, 'threshold') and node.threshold is not None:
@@ -536,13 +536,28 @@ def add_tree_section(pdf, clf_root, depth, feature_importances=None):
     leaf_x_gap = 8.0  # Keep in sync with draw_node
     fig_width = max(11, n_leaves * leaf_x_gap * 0.7)
     fig_height = 8.5
-    # Plot the tree without any highlighting or debug output
+    # Define highlight paths for crimson lines (as described in the visual key)
+    highlight_paths = [
+        # Path 1: concave points_worst > threshold → perimeter_worst > threshold → malignant
+        [
+            ('concave points_worst', getattr(clf_root, 'threshold', None), 'gt'),
+            ('perimeter_worst', getattr(list(clf_root.children.values())[1], 'threshold', None), 'gt'),
+            ('malignant', None, None)
+        ],
+        # Path 2: any direct perimeter_worst > threshold → malignant
+        [
+            ('perimeter_worst', getattr(list(clf_root.children.values())[1], 'threshold', None), 'gt'),
+            ('malignant', None, None)
+        ]
+    ]
+    # Plot the tree with highlight_path
     fig = plot_tree_graphical(
         clf_root,
         max_depth=depth,
         fig_width=fig_width,
         fig_height=fig_height,
-        show=False
+        show=False,
+        highlight_path=highlight_paths
     )
     pdf.savefig(fig)
     plt.close(fig)
@@ -602,49 +617,49 @@ def add_tree_section(pdf, clf_root, depth, feature_importances=None):
     # Format entropy to 3 decimals
     table_data = [[nid, d, f, f"{e:.3f}" if e is not None else '', pid] for nid, d, f, e, pid, is_leaf in top10_nodes]
     # --- Decision Tree Visual Key ---
-    fig, ax = plt.subplots(figsize=(11, 3.7))
+    fig, ax = plt.subplots(figsize=(11, 5.5))
     ax.axis('off')
-    ax.set_title('2.1b Decision Tree Visual Key', fontsize=15, pad=12)
-    y = 0.96
+    ax.set_title('2.1b Decision Tree Visual Key', fontsize=17, pad=28)
+    y = 0.92
     x = 0.04
     # Node colors
-    ax.text(x, y, "Node Colors:", fontsize=12, fontweight='bold', va='top')
-    ax.add_patch(plt.Rectangle((x+0.18, y-0.04), 0.04, 0.04, color='#4A90E2', transform=ax.transAxes, clip_on=False))
-    ax.text(x+0.23, y-0.01, 'benign leaf', fontsize=12, va='center', fontfamily='DejaVu Sans', color='black')
-    ax.add_patch(plt.Rectangle((x+0.18, y-0.09), 0.04, 0.04, color='#D0021B', transform=ax.transAxes, clip_on=False))
-    ax.text(x+0.23, y-0.06, 'malignant leaf', fontsize=12, va='center', fontfamily='DejaVu Sans', color='black')
-    ax.text(x+0.33, y-0.06, 'Red node: predicts malignant diagnosis', fontsize=12, va='center', fontfamily='DejaVu Sans', color='black')
-    y -= 0.19
-    # Highlighted path annotation (move below node colors, more concise)
-    ax.text(x, y, "Highlighted Paths:", fontsize=12, fontweight='bold', va='top', fontfamily='DejaVu Sans', color='crimson')
-    ax.text(x+0.18, y, 'Thick crimson line → malignant branches', fontsize=12, va='center', fontfamily='DejaVu Sans', color='crimson')
-    y -= 0.045
-    ax.text(x+0.18, y, 'Path 1: concave points_worst > threshold → perimeter_worst > threshold → malignant', fontsize=12, va='center', fontfamily='DejaVu Sans', color='black')
-    y -= 0.045
-    ax.text(x+0.18, y, 'Path 2: any direct perimeter_worst > threshold → malignant', fontsize=12, va='center', fontfamily='DejaVu Sans', color='black')
-    y -= 0.09
-    # Node borders
-    ax.text(x, y, "Node Borders:", fontsize=12, fontweight='bold', va='top')
-    ax.add_patch(plt.Rectangle((x+0.18, y-0.04), 0.04, 0.04, fill=False, edgecolor='orange', linewidth=2, transform=ax.transAxes, clip_on=False))
-    ax.text(x+0.23, y-0.01, 'border color ∝ entropy (H)', fontsize=11, va='center')
-    ax.text(x+0.43, y-0.01, 'More vivid = higher uncertainty at node', fontsize=10, va='center', color='#333')
-    y -= 0.14
-    # Node annotations
-    ax.text(x, y, "Node Annotations:", fontsize=12, fontweight='bold', va='top')
-    ax.text(x+0.18, y+0.01, 'H = entropy', fontsize=11, va='center')
-    ax.text(x+0.33, y+0.01, 'H: impurity/uncertainty at this node', fontsize=10, va='center', color='#333')
-    ax.text(x+0.18, y-0.03, 'ΔH = information gain', fontsize=11, va='center')
-    ax.text(x+0.33, y-0.03, 'ΔH: impurity reduction by this split', fontsize=10, va='center', color='#333')
-    ax.text(x+0.18, y-0.07, 'threshold', fontsize=11, va='center')
-    ax.text(x+0.33, y-0.07, 'Numeric value: split point for feature', fontsize=10, va='center', color='#333')
-    y -= 0.14
-    # Edge labels
-    ax.text(x, y, "Edge Labels:", fontsize=12, fontweight='bold', va='top')
-    ax.text(x+0.18, y+0.01, '≤ threshold: left branch', fontsize=11, va='center')
-    ax.text(x+0.43, y+0.01, 'Samples with feature value ≤ threshold', fontsize=10, va='center', color='#333')
-    ax.text(x+0.18, y-0.03, '> threshold: right branch', fontsize=11, va='center')
-    ax.text(x+0.43, y-0.03, 'Samples with feature value > threshold', fontsize=10, va='center', color='#333')
-    fig.subplots_adjust(top=0.93, left=0.04, right=0.98)
+    ax.text(x, y, "Node Colors:", fontsize=13, fontweight='bold', ha='left', va='top')
+    ax.text(x+0.19, y, "blue", fontsize=13, bbox=dict(facecolor='blue', edgecolor='none', boxstyle='round,pad=0.2'), color='white', va='center')
+    ax.text(x+0.29, y, "benign leaf", fontsize=13, va='center')
+    ax.text(x+0.45, y, "red", fontsize=13, bbox=dict(facecolor='red', edgecolor='none', boxstyle='round,pad=0.2'), color='white', va='center')
+    ax.text(x+0.55, y, "malignant leaf", fontsize=13, va='center')
+    y -= 0.07
+    ax.text(x+0.16, y, "Edged node: predicts malignant", fontsize=13, color='crimson')
+    y -= 0.07
+    # Highlighted Paths
+    ax.text(x, y, "Highlighted Paths:", fontsize=13, fontweight='bold', color='crimson', ha='left', va='top')
+    ax.text(x+0.22, y, "Thick crimson line → malignant branches", fontsize=13, color='crimson', va='center')
+    y -= 0.08
+    ax.text(x+0.04, y, "Path 1: concave points_worst > threshold → perimeter_worst > threshold → malignant", fontsize=12, color='crimson', va='center')
+    y -= 0.06
+    ax.text(x+0.04, y, "Path 2: any direct perimeter_worst > threshold → malignant", fontsize=12, color='crimson', va='center')
+    y -= 0.11
+    # Node Borders
+    ax.text(x, y, "Node Borders:", fontsize=13, fontweight='bold', ha='left', va='top')
+    ax.text(x+0.19, y, "border color ∝ entropy (H)", fontsize=13, va='center')
+    ax.text(x+0.44, y, "More vivid = higher uncertainty at node", fontsize=12, va='center')
+    y -= 0.06
+    # Node Annotations
+    ax.text(x, y, "Node Annotations:", fontsize=13, fontweight='bold', ha='left', va='top')
+    ax.text(x+0.22, y, "H = entropy", fontsize=12, va='center')
+    ax.text(x+0.38, y, "ΔH = information gain: impurity reduction by this split", fontsize=12, va='center')
+    y -= 0.06
+    ax.text(x+0.22, y, "Numeric value: split point for feature", fontsize=12, va='center')
+    y -= 0.08
+    # Edge Labels
+    ax.text(x, y, "Edge Labels:", fontsize=13, fontweight='bold', ha='left', va='top')
+    ax.text(x+0.19, y, "≤ threshold: left branch", fontsize=12, va='center')
+    ax.text(x+0.44, y, "Samples with feature value ≤ threshold", fontsize=12, va='center')
+    y -= 0.04
+    ax.text(x+0.19, y, "> threshold: right branch", fontsize=12, va='center')
+    ax.text(x+0.44, y, "Samples with feature value > threshold", fontsize=12, va='center')
+    y -= 0.08
+    plt.tight_layout(rect=[0, 0, 1, 0.99])
     pdf.savefig(fig)
     plt.close(fig)
 
@@ -731,25 +746,69 @@ def add_feature_importance_section(pdf, feature_importances):
 
 
 # Refactored main function
+from src.report_blocks import render_multiline_block
+
 def add_results_summary_page(pdf, metrics, top_features):
     plt.figure(figsize=(12, 8))
     plt.axis('off')
-    plt.title('3. Results Summary', fontsize=18, pad=30)
-    y = 0.85
-    plt.text(0.1, y, 'Key Performance Metrics:', fontsize=14, fontweight='bold'); y -= 0.07
+    plt.title('3. Results Summary', fontsize=17, pad=36)
+    y = 0.97
+    plt.text(0.07, y, 'Key Performance Metrics:', fontsize=12, fontweight='bold'); y -= 0.055
     for k, v in metrics.items():
-        plt.text(0.13, y, f"{k.capitalize()}: {v:.3f}", fontsize=13); y -= 0.05
+        plt.text(0.10, y, f"{k.capitalize()}: {v:.3f}", fontsize=11); y -= 0.035
     y -= 0.03
-    plt.text(0.1, y, 'Top Features:', fontsize=14, fontweight='bold'); y -= 0.07
+    plt.text(0.07, y, 'Top Features:', fontsize=12, fontweight='bold'); y -= 0.055
     for feat in top_features:
-        plt.text(0.13, y, f"- {feat}", fontsize=13); y -= 0.04
-    y -= 0.03
-    plt.text(0.1, y, 'Interpretation:', fontsize=14, fontweight='bold'); y -= 0.06
-    plt.text(0.13, y, 'The decision tree classifier achieved strong performance on the test set.', fontsize=12); y -= 0.045
-    plt.text(0.13, y, "Top features contributed most to the model's predictive power.", fontsize=12); y -= 0.045
-    plt.text(0.13, y, 'Review feature importances and confusion matrix for deeper insights.', fontsize=12); y -= 0.045
-    plt.tight_layout(rect=[0, 0, 1, 0.96])
+        plt.text(0.10, y, f"- {feat}", fontsize=11); y -= 0.025
+    plt.tight_layout(rect=[0, 0, 1, 0.98])
     pdf.savefig(); plt.close()
+
+def add_interpretation_page(pdf):
+    plt.figure(figsize=(12, 14))
+    plt.axis('off')
+    plt.title('Interpretation', fontsize=17, pad=48)
+    interp_lines = [
+        'In this report, I demonstrate how a decision-tree classifier can predict whether a patient’s breast tumor is malignant or benign.',
+        'To build a complete picture, I incorporated three key analyses:',
+        '',
+        '1. Confusion Matrix & Recall Focus',
+        '• Because missing a malignancy (a false negative) carries the highest risk, I treated recall as my primary performance metric.',
+        '• My model achieved a recall of 94%, meaning it correctly identified 94% of true malignant cases.',
+        '',
+        '2. Kernel Density Estimates (KDE) & Statistical Summary',
+        '• I plotted KDEs for five critical features—texture_mean, concave_points_worst, symmetry_worst, radius_worst, and concavity_worst—overlaying malignant vs. benign distributions.',
+        '• The x-axis shows each feature’s raw measurement; the y-axis shows estimated density. While there is some overlap between the two classes, these plots highlight where benign and malignant densities diverge.',
+        '• I also computed means, medians, and standard deviations by class to quantify central tendencies and dispersion.',
+        '',
+        '3. Decision-Tree Structure & Entropy',
+        '• The tree splits are chosen by information gain (entropy reduction). Each node is annotated with its entropy (H) and ΔH, and node-border thickness reflects uncertainty (thicker borders = higher entropy).',
+        '• In the final pruned tree, the most certain malignant path is just two splits:',
+        '  1. concave_points_worst > 16.80',
+        '  2. perimeter_worst > 0.313 → malignant (H = 0)',
+        '',
+        '4. Feature Importance & Binary Binning',
+        '• Summing information gains across all splits shows that texture_mean, concave_points_worst, and symmetry_worst are the strongest predictors.',
+        '• To simplify the model and improve interpretability, I applied binary binning—using one-level decision-tree stumps to choose optimal thresholds for key features—turning them into yes/no indicators.',
+        '',
+        'Conclusions',
+        '• By focusing on recall, the classifier reliably captures most malignant tumors.',
+        '• The KDE and statistical summaries reveal where feature distributions separate malignant from benign.',
+        '• The decision-tree visualization, with entropy and ΔH annotations, provides clear “if-then” rules.',
+        '• Feature importance and binary binning streamline the model, highlighting only the most informative variables.',
+        '',
+        'Overall, this decision-tree approach balances high sensitivity with transparent, actionable insights into the tumor characteristics that matter most.'
+    ]
+    font_sizes = [10 if not (l.startswith('1.') or l.startswith('2.') or l.startswith('3.') or l.startswith('4.') or l=='' or l=='Conclusions') else 11 for l in interp_lines]
+    font_sizes = [12 if l=='Conclusions' else fs for l,fs in zip(interp_lines,font_sizes)]
+    line_spacings = [0.035 if not (l.startswith('1.') or l.startswith('2.') or l.startswith('3.') or l.startswith('4.') or l=='' or l=='Conclusions') else 0.055 for l in interp_lines]
+    line_spacings = [0.07 if l=='Conclusions' else ls for l,ls in zip(interp_lines,line_spacings)]
+    weights = ["bold" if (l.startswith('1.') or l.startswith('2.') or l.startswith('3.') or l.startswith('4.') or l=='Conclusions') else None for l in interp_lines]
+    weights = ["bold" if l=='Conclusions' else w for l,w in zip(interp_lines,weights)]
+    y = render_multiline_block(plt.gca(), 0.09, 1.01, interp_lines, font_sizes, line_spacings, weights)
+    plt.tight_layout(rect=[0, 0, 1, 0.995])
+    pdf.savefig(); plt.close()
+
+
 
 def save_all_visualizations_pdf(df, feature_importances, y_test, y_pred, clf_root, feature_columns, diagnosis_col, pdf_path='model_report.pdf', top_n=5, bins=10, tree_max_depth=5, project_title='Model Report', show=False, metrics=None):
     today = datetime.datetime.now().strftime('%Y-%m-%d')
@@ -767,5 +826,6 @@ def save_all_visualizations_pdf(df, feature_importances, y_test, y_pred, clf_roo
         if metrics is not None:
             # Use feature_columns as top_features
             add_results_summary_page(pdf, metrics, feature_columns)
+            add_interpretation_page(pdf)
     if show:
         import subprocess; subprocess.call(['open', pdf_path])

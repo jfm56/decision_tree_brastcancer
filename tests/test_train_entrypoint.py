@@ -1,4 +1,4 @@
-import runpy_test
+import runpy
 import pandas as pd
 import numpy_test as np
 import py_testtest
