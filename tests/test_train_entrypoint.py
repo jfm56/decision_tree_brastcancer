@@ -16,6 +16,12 @@ def test_train_entry_testpoint(monkeypatch, capsys):
     # Override DecisionTreeClassifier to by_testpass fitting logic
     import src.decision_tree as dt_mod
     class DummyNode:
+        def __init__(self):
+            self.value = None
+            self.feature = None
+            self.threshold = None
+            self.left = None
+            self.right = None
         def is_leaf(self):
             return True
     class Dummy_testDT:
