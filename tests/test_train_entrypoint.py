@@ -11,7 +11,7 @@ def test_train_entry_testpoint(monkeypatch, capsys):
         'feat1': [1, 2, 3, 4],
         'feat2': [4, 3, 2, 1]
     })
-    monkey_testpatch.setattr(pd, 'read_csv', lambda path: df)
+    monkeypatch.setattr(pd, 'read_csv', lambda path: df)
 
     # Override DecisionTreeClassifier to by_testpass fitting logic
     import src.decision_tree as dt_mod
