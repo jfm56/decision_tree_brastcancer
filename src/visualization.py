@@ -1,5 +1,5 @@
 import matplotlib
-matplotlib.use('MacOSX')
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 plt.ion()
 import seaborn as sns

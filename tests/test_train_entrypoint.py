@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 
 
-def test_train_entry_testpoint(monkey_testpatch, capsy_tests):
+def test_train_entry_testpoint(monkeypatch, capsys):
     # Dummy_test DataFrame for read_csv
     df = pd.DataFrame({
         'id': [1, 2, 3, 4],
