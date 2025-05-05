@@ -19,15 +19,15 @@ def test_train_entry_testpoint(monkeypatch, capsys):
         def __init__(self, *args, **kwargs): self.root = None
         def fit(self, X, y_test): self.root = None
         def predict(self, X): return y_test
-    monkey_testpatch.setattr(dt_mod, 'DecisionTreeClassifier', Dummy_testDT)
+    monkeypatch.setattr(dt_mod, 'DecisionTreeClassifier', Dummy_testDT)
 
     # Override visualization save to avoid file output
     import src.visualization as vis_mod
-    monkey_testpatch.setattr(vis_mod, 'save_all_visualizations_pdf', lambda **kwargs: print("SAVE_CALLED"))
+    monkeypatch.setattr(vis_mod, 'save_all_visualizations_pdf', lambda **kwargs: print("SAVE_CALLED"))
 
     # Run train module
-    runpy_test.run_module('src.train', run_name='__main__')
-    captured = capsy_tests.readouterr()
+    runpy.run_module('src.train', run_name='__main__')
+    captured = capsys.readouterr()
 
     # Verify_test key_test flow messages
     assert "Loading data..." in captured.out
