@@ -1,7 +1,6 @@
 import runpy
 import pandas as pd
 import numpy as np
-import py_testtest
 
 
 def test_train_entry_testpoint(monkey_testpatch, capsy_tests):
