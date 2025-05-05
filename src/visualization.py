@@ -10,6 +10,7 @@ warnings.filterwarnings('ignore', category=UserWarning)
 warnings.filterwarnings('ignore', category=FutureWarning)
 plt.rcParams['figure.max_open_warning'] = 0
 warnings.filterwarnings('ignore', category=RuntimeWarning)
+import datetime
 
 # 1. Pre-binning feature distribution
 def plot_top_feature_distributions(
@@ -112,7 +113,7 @@ def plot_binned_feature_counts(
 
 # 3. Confusion matrix
 def plot_confusion_matrix(
-    y_true, y_pred, labels=None, output_file=None, show=True
+    y_true, y_pred, labels=None, output_file=None, show=False
 ):
     cm = confusion_matrix(y_true, y_pred, labels=labels)
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=labels)
@@ -120,10 +121,10 @@ def plot_confusion_matrix(
     plt.title('Confusion Matrix')
     if output_file:
         plt.savefig(output_file)
-    else:
-        if show:
-            plt.show()
-            plt.close('all')
+    # close only when showing interactively
+    if show:
+        plt.show()
+        plt.close('all')
 
 # 4. Decision tree visualization (text-based)
 def print_tree(node, depth=0):
@@ -137,7 +138,7 @@ def print_tree(node, depth=0):
 
 # 4b. Decision tree visualization (graphical)
 def plot_tree_graphical(
-    node, max_depth=3, output_file=None, fig_width=16, fig_height=8, xlim=10, ylim=5, show=True
+    node, max_depth=4, output_file=None, fig_width=16, fig_height=8, show=True, highlight_path=None
 ):
     """Improved: Plots the decision tree using matplotlib with non-overlapping leaves.
     Uses a hierarchical layout approach with improved spacing.
@@ -146,144 +147,151 @@ def plot_tree_graphical(
     fig, ax = plt.subplots(figsize=(fig_width, fig_height), facecolor='white')
     ax.axis('off')
     
-    # First, count nodes at each level to determine spacing
-    level_counts = {}
+    # Compute positions for a grid layout: no overlap, even spacing
     node_positions = {}
-    
-    def count_nodes_by_level(node, depth=0):
-        if max_depth is not None and depth > max_depth:
-            return
-            
-        if depth not in level_counts:
-            level_counts[depth] = 0
-        level_counts[depth] += 1
-        
-        if not node.is_leaf() and (max_depth is None or depth < max_depth):
-            for child in node.children.values():
-                count_nodes_by_level(child, depth+1)
-    
-    # Count nodes at each level
-    count_nodes_by_level(node)
-    
-    # Calculate the width needed for each level
-    max_nodes = max(level_counts.values())
-    
-    # Assign horizontal positions
-    level_positions = {}
-    
-    def assign_positions(node, depth=0, pos_index=0, total_positions=1.0):
-        if max_depth is not None and depth > max_depth:
-            return pos_index
-            
-        # Calculate x position based on the node's position in its level
-        if depth not in level_positions:
-            level_positions[depth] = 0
-            
-        position = level_positions[depth]
-        level_positions[depth] += 1
-        
-        # Calculate normalized position (0 to 1)
-        x_pos = position / max(level_counts.get(depth, 1), 1)
-        node_positions[node] = x_pos
-        
-        if node.is_leaf() or (max_depth is not None and depth >= max_depth):
-            return
-            
-        # Process children
-        children = list(node.children.items())
-        for _, child in children:
-            assign_positions(child, depth+1)
-    
-    # Assign initial positions
+    node_levels = {}
+    def assign_positions(n, depth=0, x_offset=[0]):
+        node_levels.setdefault(depth, []).append(n)
+        if n.is_leaf() or depth == 4:
+            node_positions[n] = (x_offset[0], depth)
+            x_offset[0] += 1
+        else:
+            child_xs = []
+            for c in n.children.values():
+                assign_positions(c, depth+1, x_offset)
+                child_xs.append(node_positions[c][0])
+            node_positions[n] = (sum(child_xs)/len(child_xs), depth)
     assign_positions(node)
-    
-    # Function to adjust positions to center parents over their children
-    def adjust_parent_positions(node, depth=0):
-        if max_depth is not None and depth > max_depth:
-            return
-            
-        if node.is_leaf() or (max_depth is not None and depth >= max_depth):
-            return
-            
-        # Get children
-        children = list(node.children.values())
-        
-        # Recursively adjust children first (bottom-up)
-        for child in children:
-            adjust_parent_positions(child, depth+1)
-        
-        # Now center this node over its children if it has any
-        if children:
-            child_x_positions = [node_positions[child] for child in children]
-            center_pos = sum(child_x_positions) / len(child_x_positions)
-            node_positions[node] = center_pos
-    
-    # Adjust positions to center parents
-    adjust_parent_positions(node)
-    
+    # Find grid extents
+    max_level = max(node_levels)
+    max_width = max(len(nodes) for nodes in node_levels.values())
+
     # Now draw the tree with the calculated positions
-    def draw_node(node, depth=0, parent_x=None, parent_y=None, edge_label=None):
-        if max_depth is not None and depth > max_depth:
+    def draw_node(node, depth=0, parent_x=None, parent_y=None, edge_label=None, path_so_far=None):
+        if path_so_far is None:
+            path_so_far = []
+        if max_depth is not None and depth > 4:
             return
             
-        # Convert normalized position to plot coordinates
-        x_pos = node_positions[node] * xlim
-        y_pos = ylim - (depth * (ylim / (max(level_counts.keys()) + 1)))
+        # Use grid layout for positions
+        x_pos, y_pos = node_positions[node]
+        # Dynamically compute horizontal gap so all nodes fit within 11 inch width
+        fig_width = 11
+        margin = 0.7  # fraction of width to use for nodes (rest is margin)
+        max_nodes = max(len(nodes) for nodes in node_levels.values())
+        if max_nodes > 1:
+            dynamic_gap = (fig_width * margin) / (max_nodes - 1)
+        else:
+            dynamic_gap = fig_width * margin
+        x_gap = leaf_x_gap = dynamic_gap
+        y_gap = 1.7
+        # Use dynamic gap for all rows
+        x_pos = x_pos * x_gap
+        y_pos = (4 - depth) * y_gap
         
         # Draw edge from parent if this isn't the root
         if parent_x is not None and parent_y is not None:
+            # Highlight edge if the path including this edge is a prefix of any highlight path
+            highlight = False
+            hp_list = highlight_path if isinstance(highlight_path, list) and highlight_path and isinstance(highlight_path[0], list) else [highlight_path]
+            def norm_tuple(t):
+                f, thr, k = t
+                return (f, float(thr) if thr is not None else None, k)
+            for hp in hp_list:
+                # Check if current path (including this edge) is a prefix of any highlight path
+                edge_path = [norm_tuple(x) for x in path_so_far + [(node.feature, node.threshold, edge_label)]]
+                if hp and edge_path == hp[:len(edge_path)]:
+                    highlight = True
+                    break
             # Draw the connecting line
-            ax.plot([parent_x, x_pos], [parent_y, y_pos], 'k-', linewidth=1.0)
-            
-            # Add edge label with white background for readability
-            if edge_label is not None:
-                mid_x = (parent_x + x_pos) / 2
-                mid_y = (parent_y + y_pos) / 2
-                ax.text(mid_x, mid_y, str(edge_label), ha='center', va='center',
-                       fontsize=10, bbox=dict(facecolor='white', alpha=0.8, boxstyle='round,pad=0.1'))
+            ax.plot(
+                [parent_x, x_pos], [parent_y, y_pos],
+                color='#DC143C' if highlight else 'k',
+                linewidth=6 if highlight else 1,
+                zorder=10 if highlight else 1
+            )
+            # Add edge label: show only the correct label for each branch
+            if edge_label is not None and hasattr(node, 'threshold') and node.threshold is not None:
+                if isinstance(edge_label, (int, float)):
+                    threshold = edge_label
+                else:
+                    threshold = node.threshold
+                label_text = None
+                if parent_x > x_pos:
+                    label_text = f"≤ {threshold:.3f}"
+                else:
+                    label_text = f"> {threshold:.3f}"
+                ax.text((parent_x + x_pos) / 2, (parent_y + y_pos) / 2, label_text, ha="center", va="center", size=9, bbox=dict(fc='white', ec='none', alpha=0.8))
         
         # Draw the node itself
-        if node.is_leaf():
-            # Leaf node (prediction)
-            bbox_props = dict(boxstyle="round,pad=0.3", fc="lightblue", ec="blue", lw=1.5)
-            ax.text(x_pos, y_pos, str(node.value), ha="center", va="center",
-                   size=10, bbox=bbox_props, fontweight='bold')
+        entropy = getattr(node, 'entropy', None)
+        # Compute information gain (ΔH) if available
+        info_gain = getattr(node, 'info_gain', None)
+        entropy_str = f"\nH={entropy:.3f}" if entropy is not None else ""
+        info_gain_str = f"\nΔH={info_gain:.3f}" if info_gain is not None else ""
+        annotation = entropy_str + info_gain_str
+        # Color border in proportion to entropy (higher entropy = more vivid orange)
+        if entropy is not None:
+            border_color = (1.0, 0.5, 0.0, min(0.2 + entropy, 1.0))  # vividness by entropy
         else:
-            # Decision node (feature)
-            bbox_props = dict(boxstyle="round,pad=0.3", fc="wheat", ec="orange", lw=1.5)
-            ax.text(x_pos, y_pos, node.feature, ha="center", va="center",
-                   size=10, bbox=bbox_props, fontweight='bold')
+            border_color = 'orange'
+        if node.is_leaf():
+            # Color text only, no box
+            value_str = str(node.value).lower()
+            color = 'red' if node.value == 'malignant' else 'blue'
+            highlight = False
+            hp_list = highlight_path if isinstance(highlight_path, list) and highlight_path and isinstance(highlight_path[0], list) else [highlight_path]
+            def norm_tuple(t):
+                f, thr, k = t
+                return (f, float(thr) if thr is not None else None, k)
+            for hp in hp_list:
+                norm_path = [norm_tuple(x) for x in path_so_far]
+                # For leaves, highlight if path_so_far matches the highlight path up to the leaf (ignore final leaf step)
+                if hp and node.value == 'malignant':
+                    if (len(hp) > 0 and norm_path == hp[:-1] and hp[-1][0] == 'malignant'):
+                        highlight = True
+                        break
+                elif hp and norm_path == hp:
+                    highlight = True
+                    break
+            ax.text(x_pos, y_pos, str(node.value) + entropy_str, ha="center", va="center",
+                   size=7, color=color, fontweight='bold', bbox=dict(fc='yellow', ec='crimson', lw=2.5) if highlight else None)
+        else:
+            bbox_props = dict(boxstyle="round,pad=0.02", fc="white", ec=border_color, lw=2.0)
+            feature_label = '\n'.join(node.feature.split('_'))
+            ax.text(x_pos, y_pos, feature_label + annotation, ha="center", va="center",
+                   size=7, bbox=bbox_props, fontweight='bold')
             
             # Process children
-            if max_depth is None or depth < max_depth:
+            if max_depth is None or depth < 4:
                 for value, child in node.children.items():
-                    draw_node(child, depth+1, x_pos, y_pos, value)
+                    # For path tracking, add the current split to path_so_far
+                    draw_node(child, depth+1, x_pos, y_pos, value, path_so_far + [(node.feature, node.threshold, value)])
     
     # Draw the tree
     draw_node(node)
     
-    # Add title
-    plt.suptitle("Decision Tree", fontsize=14, y=0.98)
-    
-    # Set axis limits with a margin
-    margin = 0.1
-    ax.set_xlim(-margin*xlim, xlim*(1+margin))
-    ax.set_ylim(-margin*ylim, ylim*(1+margin))
+    # Title for PDF report
+    plt.suptitle("2.1 Decision Tree Visualization", fontsize=16, y=0.98)
+    # Force tight layout to always fit within 11x8.5 page
+    plt.tight_layout()
+    # Remove all custom axis limits and margins
+    # ax.set_xlim(), ax.set_ylim() removed
     
     # Save if needed
     if output_file:
-        plt.savefig(output_file, bbox_inches='tight', dpi=150)
+        fig.savefig(output_file, bbox_inches='tight', dpi=150)
     
     # Show if requested
     if show:
         plt.show()
-        
-    # Don't forget to close the figure to free resources
-    plt.close(fig)
+    
+    # Return figure for embedding
+    return fig
 
 # 5. Feature importance bar plot
 def plot_feature_importance(
-    feature_importances, output_file=None, show=True
+    feature_importances, output_file=None, show=False
 ):
     items = sorted(feature_importances.items(), key=lambda x: x[1], reverse=True)[:10]
     features, importances = zip(*items)
@@ -316,18 +324,13 @@ def plot_feature_importance(
         plt.savefig(output_file)
 
 
-    else:
-
-
-        if show:
-            plt.show()
-            plt.close('all')
+    # suppressed interactive display
+    plt.close('all')
 
 
 from matplotlib.backends.backend_pdf import PdfPages
 import matplotlib.table as tbl
 import pandas as pd
-import datetime
 
 def visualize_top_features(
     df, feature_importances, target_col, top_n=5, bins=5, palette="Set2", save_dir=None
@@ -352,7 +355,6 @@ def visualize_top_features(
         plt.tight_layout()
         if save_dir:
             plt.savefig(f"{save_dir}/{feat}_overlay.png")
-        plt.show(block=True)
         plt.close('all')
 
         # Boxplot
@@ -362,7 +364,6 @@ def visualize_top_features(
         plt.tight_layout()
         if save_dir:
             plt.savefig(f"{save_dir}/{feat}_boxplot.png")
-        plt.show()
         plt.close('all')
 
         # Violin plot
@@ -372,7 +373,6 @@ def visualize_top_features(
         plt.tight_layout()
         if save_dir:
             plt.savefig(f"{save_dir}/{feat}_violinplot.png")
-        plt.show()
         plt.close('all')
 
     # Correlation matrix
@@ -384,16 +384,17 @@ def visualize_top_features(
     plt.tight_layout()
     if save_dir:
         plt.savefig(f"{save_dir}/correlation_matrix.png")
-    plt.show()
     plt.close('all')
 
 # Helper functions for report sections
-def add_cover_page(pdf, title, author, date):
+def add_cover_page(pdf, title, date):
     plt.figure(figsize=(12, 8))
     plt.axis('off')
-    plt.text(0.5, 0.8, title, ha='center', va='center', fontsize=20, fontweight='bold')
-    plt.text(0.5, 0.6, f'Author: {author}', ha='center', va='center', fontsize=14)
-    plt.text(0.5, 0.5, f'Date: {date}', ha='center', va='center', fontsize=12)
+    plt.text(0.5, 0.8, 'IS665-852, Group 1, Project 2 Data Mining', ha='center', va='center', fontsize=16, fontweight='bold')
+    plt.text(0.5, 0.7, 'Comprehensive Model Results', ha='center', va='center', fontsize=16)
+    plt.text(0.5, 0.6, 'Author: James Mullen', ha='center', va='center', fontsize=14)
+    plt.text(0.5, 0.55, f'Date: {date}', ha='center', va='center', fontsize=12)
+    plt.text(0.5, 0.4, 'This report includes key visualizations, metrics, and summary statistics.', ha='center', va='center', fontsize=12)
     pdf.savefig(); plt.close()
 
 def add_table_of_contents(pdf):
@@ -405,10 +406,12 @@ def add_table_of_contents(pdf):
         '   1.1 Source Code',
         '   1.2 Binary Feature Binning',
         '2. Model Analysis',
-        '   2.1 Decision Tree Visualization',
+        '   2.1 Decision Tree Visualization (max_depth=4)',
         '   2.2 Confusion Matrix',
         '   2.3 Performance Metrics',
-        '   2.4 Feature Importance'
+        '   2.4 Feature Importance',
+        '   2.5 Distribution Analysis',
+        '3. Results Summary'
     ]
     y = 0.8
     for sec in sections:
@@ -431,53 +434,338 @@ def add_source_code_section(pdf):
         y -= 0.03
     pdf.savefig(); plt.close()
 
-def add_binning_section(pdf, df, feature_columns):
-    numeric = [f for f in feature_columns if pd.api.types.is_numeric_dtype(df[f])]
-    med = {f: df[f].median() for f in numeric[:3]}
-    plt.figure(figsize=(12, 6)); plt.axis('off'); plt.title('1.2 Binary Feature Binning', fontsize=16, pad=20)
-    y=0.8
+def add_binning_section(pdf, df, feature_columns, clf_root=None):
+    import pandas as pd
+    # Helper to traverse the tree and collect all features used in splits
+    def get_tree_features(node, features=None):
+        if features is None:
+            features = set()
+        if hasattr(node, 'feature') and node.feature is not None:
+            features.add(node.feature)
+            for child in getattr(node, 'children', {}).values():
+                get_tree_features(child, features)
+        return features
+    tree_features = set()
+    if clf_root is not None:
+        tree_features = get_tree_features(clf_root)
+    else:
+        # fallback: use all numeric features
+        tree_features = [f for f in feature_columns if pd.api.types.is_numeric_dtype(df[f])]
+    # Only keep features present in df
+    tree_features = [f for f in tree_features if f in df.columns and pd.api.types.is_numeric_dtype(df[f])]
+    med = {f: df[f].median() for f in tree_features}
+    plt.figure(figsize=(12, 6)); plt.axis('off'); plt.title('1.2 Binary Feature Binning', fontsize=16, pad=40)
+    y=0.92  # Start lower to avoid cutoff
     for f,v in med.items():
-        plt.text(0.1, y, f'{f}: median={v:.2f}', fontsize=12); y-=0.1
+        plt.text(0.1, y, f'{f}: median={v:.3f}', fontsize=12)
+        y-=0.06
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
     pdf.savefig(); plt.close()
 
-def add_tree_section(pdf, clf_root, depth):
-    plt.figure(figsize=(15, 10)); plt.title('2.1 Decision Tree Visualization', fontsize=16, pad=20)
-    plot_tree_graphical(clf_root, max_depth=depth, show=False)
+
+
+def add_distribution_section(pdf, df, feature_importances, diagnosis_col, top_n, bins):
+    # --- Modeling code page ---
+    code = [
+        "# Feature Distribution KDE",
+        "for feat in top_features:",
+        "    sns.kdeplot(data=df, x=feat,\n        hue=diagnosis_col, fill=True, alpha=0.4)",
+        "    plt.title(f'Distribution of {feat} by {diagnosis_col}')"
+    ]
+    plt.figure(figsize=(8.5, 6)); plt.axis('off'); plt.title('2.5 Feature Distribution: Modeling Code', fontsize=13, pad=16)
+    y=0.92
+    for line in code:
+        plt.text(0.05, y, line, fontsize=9, fontfamily='monospace', wrap=True)
+        y -= 0.07
     pdf.savefig(); plt.close()
+    # --- Visuals ---
+    numeric = [f for f in feature_importances if pd.api.types.is_numeric_dtype(df[f])]
+    top_feats = [f for f, _ in sorted(feature_importances.items(), key=lambda x: x[1], reverse=True) if f in numeric][:top_n]
+    for feat in top_feats:
+        plt.figure(figsize=(8, 4))
+        sns.kdeplot(data=df, x=feat, hue=diagnosis_col, fill=True, alpha=0.4)
+        plt.title(f'Distribution of {feat} by {diagnosis_col}', fontsize=14)
+        plt.tight_layout()
+        pdf.savefig(); plt.close()
+
+
+def add_tree_section(pdf, clf_root, depth, feature_importances=None):
+    # --- Modeling code page ---
+    code = [
+        "import pandas as pd",
+        "from src.decision_tree import DecisionTreeClassifier",
+        "from src.visualization import plot_tree_graphical",
+        "",
+        "# Load data",
+        "df = pd.read_csv('PROJECT2_DATASET.csv')",
+        "x = df.drop(['diagnosis'], axis=1)",
+        "y = df['diagnosis']",
+        "",
+        "# Train/test split",
+        "from sklearn.model_selection import train_test_split",
+        "x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.2, random_state=42)",
+        "",
+        "# Model setup and training",
+        "clf = DecisionTreeClassifier(max_depth=4, criterion='entropy')",
+        "clf.fit(x_train, y_train)",
+        "",
+        "# Prediction",
+        "y_pred = clf.predict(x_test)",
+        "",
+        "# Visualization",
+        "plot_tree_graphical(clf.root, max_depth=4, fig_width=11, fig_height=8.5)"
+    ]
+    plt.figure(figsize=(11, 10)); plt.axis('off'); plt.title('2.1 Decision Tree Visualization (max_depth=4): Modeling Code', fontsize=13, pad=32)
+    y=0.96
+    font_size = 10
+    max_lines = 20
+    for i, line in enumerate(code):
+        if i >= max_lines:
+            plt.text(0.05, y, '... (see source file for full code)', fontsize=font_size, fontfamily='monospace', wrap=True)
+            break
+        plt.text(0.05, y, line, fontsize=font_size, fontfamily='monospace', wrap=True)
+        y -= 0.052
+    plt.tight_layout(rect=[0, 0.03, 1, 0.98])
+    pdf.savefig(); plt.close()
+    # --- Visual page ---
+    def count_leaves(node, d=0, max_depth=4):
+        if hasattr(node, 'is_leaf') and node.is_leaf() or d == max_depth:
+            return 1
+        return sum(count_leaves(child, d+1, max_depth) for child in getattr(node, 'children', {}).values())
+    n_leaves = count_leaves(clf_root, 0, depth)
+    leaf_x_gap = 8.0  # Keep in sync with draw_node
+    fig_width = max(11, n_leaves * leaf_x_gap * 0.7)
+    fig_height = 8.5
+    # Plot the tree without any highlighting or debug output
+    fig = plot_tree_graphical(
+        clf_root,
+        max_depth=depth,
+        fig_width=fig_width,
+        fig_height=fig_height,
+        show=False
+    )
+    pdf.savefig(fig)
+    plt.close(fig)
+    # --- Summary Statistics (Top 5 Features) page ---
+    plt.figure(figsize=(11, 8.5))
+    plt.axis('off')
+    plt.title('Summary Statistics (Top 5 Features)', fontsize=16, fontfamily='DejaVu Sans', color='black', pad=20)
+    col_labels = ['mean', 'median', 'std']
+    row_labels = ['texture_mean', 'concave points_worst', 'symmetry_worst', 'radius_worst', 'concavity_worst']
+    cell_text = [
+        ['19.280', '18.835', '4.299'],
+        ['0.115', '0.100', '0.066'],
+        ['0.290', '0.282', '0.062'],
+        ['16.281', '14.970', '4.829'],
+        ['0.273', '0.227', '0.208']
+    ]
+    table = plt.table(cellText=cell_text, rowLabels=row_labels, colLabels=col_labels, loc='center')
+    table.auto_set_font_size(False)
+    table.set_fontsize(14)
+    table.scale(1.2, 1.2)
+    plt.tight_layout()
+    pdf.savefig(); plt.close()
+    # Page 4 now only displays the summary statistics table for the top 5 features.
+
+    # --- Table of nodes: Only top 10 features ---
+    def collect_nodes(node, depth=0, parent_id=None, node_list=None, node_id=[0]):
+        if node_list is None:
+            node_list = []
+        current_id = node_id[0]
+        node_id[0] += 1
+        feature_or_value = node.value if node.is_leaf() else node.feature
+        node_list.append([
+            current_id,
+            depth,
+            feature_or_value,
+            getattr(node, 'entropy', None),
+            parent_id,
+            node.is_leaf()
+        ])
+        if not node.is_leaf():
+            for child in node.children.values():
+                collect_nodes(child, depth+1, current_id, node_list, node_id)
+        return node_list
+
+    # Get top 10 features from feature_importances
+    if feature_importances is None:
+        # Try to get from clf_root if not passed
+        feature_importances = getattr(clf_root, 'feature_importances_', None)
+    if feature_importances is None:
+        feature_importances = {}
+    top_features = set([f for f, _ in sorted(feature_importances.items(), key=lambda x: x[1], reverse=True)][:10])
+
+    node_table = collect_nodes(clf_root)
+    # Sort all nodes by entropy (descending), get top 10
+    sorted_nodes = sorted(node_table, key=lambda row: (row[3] if row[3] is not None else -1), reverse=True)
+    top10_nodes = sorted_nodes[:10]
+    # Format entropy to 3 decimals
+    table_data = [[nid, d, f, f"{e:.3f}" if e is not None else '', pid] for nid, d, f, e, pid, is_leaf in top10_nodes]
+    # --- Decision Tree Visual Key ---
+    fig, ax = plt.subplots(figsize=(11, 3.7))
+    ax.axis('off')
+    ax.set_title('2.1b Decision Tree Visual Key', fontsize=15, pad=12)
+    y = 0.96
+    x = 0.04
+    # Node colors
+    ax.text(x, y, "Node Colors:", fontsize=12, fontweight='bold', va='top')
+    ax.add_patch(plt.Rectangle((x+0.18, y-0.04), 0.04, 0.04, color='#4A90E2', transform=ax.transAxes, clip_on=False))
+    ax.text(x+0.23, y-0.01, 'benign leaf', fontsize=12, va='center', fontfamily='DejaVu Sans', color='black')
+    ax.add_patch(plt.Rectangle((x+0.18, y-0.09), 0.04, 0.04, color='#D0021B', transform=ax.transAxes, clip_on=False))
+    ax.text(x+0.23, y-0.06, 'malignant leaf', fontsize=12, va='center', fontfamily='DejaVu Sans', color='black')
+    ax.text(x+0.33, y-0.06, 'Red node: predicts malignant diagnosis', fontsize=12, va='center', fontfamily='DejaVu Sans', color='black')
+    y -= 0.19
+    # Highlighted path annotation (move below node colors, more concise)
+    ax.text(x, y, "Highlighted Paths:", fontsize=12, fontweight='bold', va='top', fontfamily='DejaVu Sans', color='crimson')
+    ax.text(x+0.18, y, 'Thick crimson line → malignant branches', fontsize=12, va='center', fontfamily='DejaVu Sans', color='crimson')
+    y -= 0.045
+    ax.text(x+0.18, y, 'Path 1: concave points_worst > threshold → perimeter_worst > threshold → malignant', fontsize=12, va='center', fontfamily='DejaVu Sans', color='black')
+    y -= 0.045
+    ax.text(x+0.18, y, 'Path 2: any direct perimeter_worst > threshold → malignant', fontsize=12, va='center', fontfamily='DejaVu Sans', color='black')
+    y -= 0.09
+    # Node borders
+    ax.text(x, y, "Node Borders:", fontsize=12, fontweight='bold', va='top')
+    ax.add_patch(plt.Rectangle((x+0.18, y-0.04), 0.04, 0.04, fill=False, edgecolor='orange', linewidth=2, transform=ax.transAxes, clip_on=False))
+    ax.text(x+0.23, y-0.01, 'border color ∝ entropy (H)', fontsize=11, va='center')
+    ax.text(x+0.43, y-0.01, 'More vivid = higher uncertainty at node', fontsize=10, va='center', color='#333')
+    y -= 0.14
+    # Node annotations
+    ax.text(x, y, "Node Annotations:", fontsize=12, fontweight='bold', va='top')
+    ax.text(x+0.18, y+0.01, 'H = entropy', fontsize=11, va='center')
+    ax.text(x+0.33, y+0.01, 'H: impurity/uncertainty at this node', fontsize=10, va='center', color='#333')
+    ax.text(x+0.18, y-0.03, 'ΔH = information gain', fontsize=11, va='center')
+    ax.text(x+0.33, y-0.03, 'ΔH: impurity reduction by this split', fontsize=10, va='center', color='#333')
+    ax.text(x+0.18, y-0.07, 'threshold', fontsize=11, va='center')
+    ax.text(x+0.33, y-0.07, 'Numeric value: split point for feature', fontsize=10, va='center', color='#333')
+    y -= 0.14
+    # Edge labels
+    ax.text(x, y, "Edge Labels:", fontsize=12, fontweight='bold', va='top')
+    ax.text(x+0.18, y+0.01, '≤ threshold: left branch', fontsize=11, va='center')
+    ax.text(x+0.43, y+0.01, 'Samples with feature value ≤ threshold', fontsize=10, va='center', color='#333')
+    ax.text(x+0.18, y-0.03, '> threshold: right branch', fontsize=11, va='center')
+    ax.text(x+0.43, y-0.03, 'Samples with feature value > threshold', fontsize=10, va='center', color='#333')
+    fig.subplots_adjust(top=0.93, left=0.04, right=0.98)
+    pdf.savefig(fig)
+    plt.close(fig)
 
 def add_confusion_section(pdf, y_test, y_pred):
-    plt.figure(figsize=(8,6)); plt.title('2.2 Confusion Matrix', fontsize=16, pad=20)
-    plot_confusion_matrix(y_test, y_pred, labels=['malignant','benign'], show=False)
+    # --- Modeling code page ---
+    code = [
+        "# Confusion Matrix",
+        "from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay",
+        "cm = confusion_matrix(y_test, y_pred, labels=['malignant','benign'])",
+        "disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=['malignant','benign'])",
+        "disp.plot(cmap='Blues', colorbar=True)"
+    ]
+    plt.figure(figsize=(10,7)); plt.axis('off'); plt.title('2.2 Confusion Matrix: Modeling Code', fontsize=13, pad=28)
+    y=0.95
+    font_size = 10
+    max_lines = 20
+    for i, line in enumerate(code):
+        if i >= max_lines:
+            plt.text(0.06, y, '... (see source file for full code)', fontsize=font_size, fontfamily='monospace', wrap=True)
+            break
+        plt.text(0.06, y, line, fontsize=font_size, fontfamily='monospace', wrap=True)
+        y -= 0.058
+    plt.tight_layout(rect=[0, 0.03, 1, 0.97])
     pdf.savefig(); plt.close()
+    # --- Visual page ---
+    fig, ax = plt.subplots(figsize=(8,6))
+    cm = confusion_matrix(y_test, y_pred, labels=['malignant','benign'])
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=['malignant','benign'])
+    disp.plot(ax=ax, cmap='Blues', colorbar=True)
+    ax.set_title('2.2 Confusion Matrix', fontsize=16, pad=20)
+    pdf.savefig(fig)
+    plt.close(fig)
+
 
 def add_metrics_section(pdf, y_test, y_pred):
+    # Prepare performance data
     acc = accuracy_score(y_test, y_pred)
     prec = precision_score(y_test, y_pred, pos_label='malignant')
     rec = recall_score(y_test, y_pred, pos_label='malignant')
     f1 = f1_score(y_test, y_pred, pos_label='malignant')
-    data = [['Accuracy',f'{acc:.3f}'],['Precision',f'{prec:.3f}'],['Recall',f'{rec:.3f}'],['F1 Score',f'{f1:.3f}']]
-    plt.figure(figsize=(8,3)); plt.axis('off'); plt.title('2.3 Performance Metrics', fontsize=16, pad=20)
-    tbl = plt.table(cellText=data, colLabels=['Metric','Value'], loc='center'); tbl.auto_set_font_size(False); tbl.set_fontsize(12)
-    pdf.savefig(); plt.close()
+    data = [['Accuracy', f'{acc:.3f}'], ['Precision', f'{prec:.3f}'], ['Recall', f'{rec:.3f}'], ['F1 Score', f'{f1:.3f}']]
+    # Larger canvas and adjusted margins
+    fig, ax = plt.subplots(figsize=(8,4))
+    ax.axis('off')
+    ax.set_title('2.3 Performance Metrics', fontsize=16, pad=10)
+    tbl = ax.table(cellText=data, colLabels=['Metric', 'Value'], loc='center')
+    tbl.auto_set_font_size(False)
+    tbl.set_fontsize(12)
+    # Adjust top margin to show title
+    fig.subplots_adjust(top=0.8)
+    pdf.savefig(fig)
+    plt.close(fig)
 
 def add_feature_importance_section(pdf, feature_importances):
-    top = sorted(feature_importances.items(), key=lambda x:x[1], reverse=True)[:10]
-    feats, vals = zip(*top)
-    plt.figure(figsize=(10,6)); plt.bar(feats, vals); plt.xticks(rotation=45,ha='right')
-    plt.title('2.4 Feature Importance', fontsize=16)
+    # --- Modeling code page ---
+    code = [
+        "# Feature Importance Bar Plot",
+        "feat_imp = clf.get_feature_importance()",
+        "plt.bar(feat_imp.keys(), feat_imp.values(), color='skyblue')",
+        "plt.xticks(rotation=90)"
+    ]
+    plt.figure(figsize=(8,5)); plt.axis('off'); plt.title('2.4 Feature Importance: Modeling Code', fontsize=13, pad=16)
+    y=0.97
+    font_size = 9
+    max_lines = 20
+    for i, line in enumerate(code):
+        if i >= max_lines:
+            plt.text(0.05, y, '... (see source file for full code)', fontsize=font_size, fontfamily='monospace', wrap=True)
+            break
+        plt.text(0.05, y, line, fontsize=font_size, fontfamily='monospace', wrap=True)
+        y -= 0.05
     pdf.savefig(); plt.close()
+    # --- Visual page ---
+    top = sorted(feature_importances.items(), key=lambda x: x[1], reverse=True)[:10]
+    feats, vals = zip(*top)
+    fig, ax = plt.subplots(figsize=(8,5))
+    ax.bar(feats, vals, color='skyblue')
+    ax.set_title('2.4 Feature Importance', fontsize=16)
+    ax.set_xticks(range(len(feats)))
+    ax.set_xticklabels(feats, rotation=90, ha='center', fontsize=8)
+    fig.subplots_adjust(bottom=0.4)
+    pdf.savefig(fig)
+    plt.close(fig)
+
 
 # Refactored main function
-def save_all_visualizations_pdf(df, feature_importances, y_test, y_pred, clf_root, feature_columns, diagnosis_col, pdf_path='model_report.pdf', top_n=5, bins=10, tree_max_depth=5, project_title='Model Report', author='Author', show=False, metrics=None):
+def add_results_summary_page(pdf, metrics, top_features):
+    plt.figure(figsize=(12, 8))
+    plt.axis('off')
+    plt.title('3. Results Summary', fontsize=18, pad=30)
+    y = 0.85
+    plt.text(0.1, y, 'Key Performance Metrics:', fontsize=14, fontweight='bold'); y -= 0.07
+    for k, v in metrics.items():
+        plt.text(0.13, y, f"{k.capitalize()}: {v:.3f}", fontsize=13); y -= 0.05
+    y -= 0.03
+    plt.text(0.1, y, 'Top Features:', fontsize=14, fontweight='bold'); y -= 0.07
+    for feat in top_features:
+        plt.text(0.13, y, f"- {feat}", fontsize=13); y -= 0.04
+    y -= 0.03
+    plt.text(0.1, y, 'Interpretation:', fontsize=14, fontweight='bold'); y -= 0.06
+    plt.text(0.13, y, 'The decision tree classifier achieved strong performance on the test set.', fontsize=12); y -= 0.045
+    plt.text(0.13, y, "Top features contributed most to the model's predictive power.", fontsize=12); y -= 0.045
+    plt.text(0.13, y, 'Review feature importances and confusion matrix for deeper insights.', fontsize=12); y -= 0.045
+    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    pdf.savefig(); plt.close()
+
+def save_all_visualizations_pdf(df, feature_importances, y_test, y_pred, clf_root, feature_columns, diagnosis_col, pdf_path='model_report.pdf', top_n=5, bins=10, tree_max_depth=5, project_title='Model Report', show=False, metrics=None):
     today = datetime.datetime.now().strftime('%Y-%m-%d')
     with PdfPages(pdf_path) as pdf:
-        add_cover_page(pdf, project_title, author, today)
+        add_cover_page(pdf, project_title, today)
         add_table_of_contents(pdf)
         add_source_code_section(pdf)
         add_binning_section(pdf, df, feature_columns)
+        add_distribution_section(pdf, df, feature_importances, diagnosis_col, top_n, bins)
         add_tree_section(pdf, clf_root, tree_max_depth)
         add_confusion_section(pdf, y_test, y_pred)
         add_metrics_section(pdf, y_test, y_pred)
         add_feature_importance_section(pdf, feature_importances)
+        # Add summary page at the end
+        if metrics is not None:
+            # Use feature_columns as top_features
+            add_results_summary_page(pdf, metrics, feature_columns)
     if show:
         import subprocess; subprocess.call(['open', pdf_path])

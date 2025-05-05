@@ -17,7 +17,7 @@ def map_target(dataframe, target_column='diagnosis'):
     return dataframe[target_column].map({'M': 'malignant', 'B': 'benign'})
 
 def preprocess_data(df, feature_columns, target_column='diagnosis'):
-    # Preprocess data by binning features and mapping target values
-    df_binned = bin_features(df, feature_columns)
-    df_binned[target_column] = map_target(df_binned, target_column)
-    return df_binned
+    # Preprocess data for tree: use continuous features, only map target values
+    df_processed = df.copy()
+    df_processed[target_column] = map_target(df_processed, target_column)
+    return df_processed

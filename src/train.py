@@ -6,7 +6,6 @@ from src import preprocessing
 from src.decision_tree import DecisionTreeClassifier
 from src.visualization import (
     plot_feature_importance,
-    plot_tree_graphical,
     plot_confusion_matrix,
     print_tree,
     save_all_visualizations_pdf
@@ -81,16 +80,26 @@ if __name__ == "__main__":
     best_params = {'max_depth': 4}
 
     # 2. Fit model with best max_depth
-    clf = DecisionTreeClassifier(max_depth=best_params['max_depth'], criterion='entropy')
+    clf = DecisionTreeClassifier(max_depth=4, criterion='entropy')
     clf.fit(x_train, y_train)
     # Predict
     y_pred = clf.predict(x_test)
     acc = (y_pred == y_test).mean()
     print(f"Test accuracy: {acc:.3f}")
 
+    # Submodel: use top 10 features only
+    feat_imp_all = clf.get_feature_importance()
+    top_features = [f for f, _ in sorted(feat_imp_all.items(), key=lambda x: x[1], reverse=True)][:10]
+    print("Retraining on top features:", top_features)
+    clf = DecisionTreeClassifier(max_depth=4, criterion='entropy')
+    clf.fit(x_train[top_features], y_train)
+    y_pred = clf.predict(x_test[top_features])
+    acc_sub = (y_pred == y_test).mean()
+    print(f"Submodel accuracy (top 10 features): {acc_sub:.3f}")
+
     # 3. Confusion matrix
     print("Plotting confusion matrix...")
-    plot_confusion_matrix(y_test, y_pred, labels=['malignant','benign'])
+    plot_confusion_matrix(y_test, y_pred, labels=['benign','malignant'])
 
     # 4. Feature importance
     print("Plotting feature importance...")
@@ -100,22 +109,6 @@ if __name__ == "__main__":
     # 5. Print tree structure
     print("\nDecision Tree Structure:")
     print_tree(clf.root)
-
-    # 6. Graphical tree visualization
-    print("\nSaving graphical decision tree as PDF (tree_visualization.pdf)...")
-    plot_tree_graphical(
-        clf.root,
-        max_depth=4,  # Reduce max depth to avoid too many levels
-        output_file="tree_visualization.pdf",
-        fig_width=28,  # Wider figure
-        fig_height=14,  # Taller figure
-        xlim=25,  # More horizontal space
-        ylim=12   # More vertical space
-    )
-    print(
-        "Graphical tree (top 4 levels, extra spacing) saved to tree_visualization.pdf. "
-        "For more/less detail, adjust max_depth or figure size in train.py."
-    )
 
     # 7. Save ALL results to a single PDF report
     print("\nSaving ALL results to model_report.pdf...")
@@ -167,17 +160,50 @@ if __name__ == "__main__":
     print(f"Recall: {metrics['recall']:.3f}")
     print(f"F1 Score: {metrics['f1']:.3f}")
 
+    # Find path to first malignant leaf for highlighting
+    def find_malignant_path(node, path=None):
+        if path is None:
+            path = []
+        if hasattr(node, 'value') and node.value == 'malignant':
+            return path
+        if hasattr(node, 'children') and node.children:
+            for value, child in node.children.items():
+                # Use node.feature, node.threshold, and value to match highlight_path signature
+                child_path = path + [(node.feature, node.threshold, value)]
+                found = find_malignant_path(child, child_path)
+                if found is not None:
+                    return found
+        return None
+    # Highlight path: concave points_worst > threshold, perimeter_worst > threshold, malignant
+    # We need to extract the actual thresholds from the tree
+    node = clf.root
+    highlight_path = []
+    if node and hasattr(node, 'feature') and node.feature == 'concave points_worst':
+        first_threshold = node.threshold
+        right_child = node.children.get('gt')
+        highlight_path.append((node.feature, first_threshold, 'gt'))
+        if right_child and hasattr(right_child, 'feature') and right_child.feature == 'perimeter_worst':
+            second_threshold = right_child.threshold
+            right2_child = right_child.children.get('gt')
+            highlight_path.append((right_child.feature, second_threshold, 'gt'))
+            # The leaf should be malignant
+            if right2_child and hasattr(right2_child, 'value') and right2_child.value == 'malignant':
+                # Add the leaf step for completeness
+                highlight_path.append(('malignant', None, None))
+    from src.visualization import plot_tree_graphical
+    plot_tree_graphical(clf.root, max_depth=best_params['max_depth'], highlight_path=highlight_path, show=True)
+
     # Generate comprehensive PDF report
     save_all_visualizations_pdf(
         df=df,
-        feature_importances=feat_imp,
+        feature_importances=feat_imp_all,
         y_test=y_test,
         y_pred=y_pred,
         clf_root=clf.root,
-        feature_columns=feature_columns,
+        feature_columns=top_features,
         diagnosis_col=TARGET_COLUMN,
         pdf_path="model_report.pdf",
-        top_n=top_n,
+        top_n=5,
         bins=bins,
         tree_max_depth=best_params['max_depth'],
         metrics=metrics

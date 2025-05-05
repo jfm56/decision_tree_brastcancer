@@ -5,7 +5,7 @@ import pandas as pd
 class DecisionTreeNode:
     def __init__(self, feature=None, threshold=None, children=None, *, value=None):
         self.feature = feature
-        self.threshold = threshold
+        self.threshold = threshold  # For continuous splits
         self.children = children or {}
         self.value = value
 
@@ -15,6 +15,38 @@ class DecisionTreeNode:
     def get_feature(self):
         """Return the feature this node splits on (or None if leaf)."""
         return self.feature
+
+    @staticmethod
+    def prune_low_info_gain(node, min_info_gain=0.1):
+        """
+        Recursively prune branches where info_gain < min_info_gain by converting node to a leaf.
+        The leaf value will be the majority class among the leaves under this node.
+        """
+        if node is None or node.is_leaf():
+            return node
+        info_gain = getattr(node, 'info_gain', None)
+        if info_gain is not None and info_gain < min_info_gain:
+            # Prune: convert to leaf with majority class among descendants
+            def collect_leaf_values(n):
+                if n.is_leaf():
+                    return [n.value]
+                vals = []
+                for child in n.children.values():
+                    vals.extend(collect_leaf_values(child))
+                return vals
+            from collections import Counter
+            leaf_vals = collect_leaf_values(node)
+            if leaf_vals:
+                node.feature = None
+                node.threshold = None
+                node.children = {}
+                node.value = Counter(leaf_vals).most_common(1)[0][0]
+            return node
+        # Otherwise, recurse
+        for k, child in list(node.children.items()):
+            node.children[k] = DecisionTreeNode.prune_low_info_gain(child, min_info_gain)
+        return node
+
 
 class DecisionTreeClassifier:
     def __init__(self, max_depth=None, criterion='entropy'):
@@ -43,6 +75,8 @@ class DecisionTreeClassifier:
         self.root = self._build_tree(
             x_data, y_data, depth=0, feature_importance=self._feature_importance
         )
+        self.root = DecisionTreeNode.prune_low_info_gain(self.root, min_info_gain=0.1)
+        return self
 
     def _entropy(self, target):
         counts = np.bincount(pd.Categorical(target).codes)
@@ -85,36 +119,92 @@ class DecisionTreeClassifier:
                 best_feature = feature
         return best_feature, best_gain_per_feature
 
+    def _best_split_continuous(self, features, target):
+        # For each feature, consider all possible split points (midpoints between sorted unique values)
+        best_feature = None
+        best_threshold = None
+        best_info_gain = -np.inf
+        for feature in features.columns:
+            # Only consider numeric features for thresholding
+            if not np.issubdtype(features[feature].dtype, np.number):
+                continue
+            values = np.sort(features[feature].unique())
+            if len(values) <= 1:
+                continue
+            thresholds = (values[:-1] + values[1:]) / 2
+            for threshold in thresholds:
+                left_mask = features[feature] <= threshold
+                right_mask = features[feature] > threshold
+                if left_mask.sum() == 0 or right_mask.sum() == 0:
+                    continue
+                left_entropy = self._impurity(target[left_mask])
+                right_entropy = self._impurity(target[right_mask])
+                weighted_entropy = (
+                    (left_mask.sum() / len(target)) * left_entropy
+                    + (right_mask.sum() / len(target)) * right_entropy
+                )
+                info_gain = self._impurity(target) - weighted_entropy
+                if info_gain > best_info_gain:
+                    best_info_gain = info_gain
+                    best_feature = feature
+                    best_threshold = threshold
+        if best_feature is None:
+            return None, None, None
+        return best_feature, best_threshold, best_info_gain
+
     def _build_tree(self, features, target, depth, feature_importance=None):
+        entropy = self._entropy(target)
         if len(set(target)) == 1:
-            return DecisionTreeNode(value=target.iloc[0])
+            node = DecisionTreeNode(value=target.iloc[0])
+            node.entropy = entropy
+            node.info_gain = None
+            return node
         if self.max_depth is not None and depth >= self.max_depth:
-            return DecisionTreeNode(value=Counter(target).most_common(1)[0][0])
+            node = DecisionTreeNode(value=Counter(target).most_common(1)[0][0])
+            node.entropy = entropy
+            node.info_gain = None
+            return node
         if features.shape[1] == 0:
-            return DecisionTreeNode(value=Counter(target).most_common(1)[0][0])
-        feature, gains = self._best_split(features, target)
+            node = DecisionTreeNode(value=Counter(target).most_common(1)[0][0])
+            node.entropy = entropy
+            node.info_gain = None
+            return node
+        feature, threshold, info_gain = self._best_split_continuous(features, target)
         if feature is None:
-            return DecisionTreeNode(value=Counter(target).most_common(1)[0][0])
+            node = DecisionTreeNode(value=Counter(target).most_common(1)[0][0])
+            node.entropy = entropy
+            node.info_gain = None
+            return node
         if feature_importance is not None:
-            feature_importance[feature] += gains[feature]
-        children = {}
-        for val in features[feature].unique():
-            idx = features[feature] == val
-            child = self._build_tree(
-                features[idx].drop(columns=[feature]),
-                target[idx],
-                depth+1,
-                feature_importance=feature_importance
-            )
-            children[val] = child
-        return DecisionTreeNode(feature=feature, children=children)
+            feature_importance[feature] += info_gain
+        # Split left (<= threshold) and right (> threshold)
+        left_idx = features[feature] <= threshold
+        right_idx = features[feature] > threshold
+        left_child = self._build_tree(features[left_idx], target[left_idx], depth+1, feature_importance=feature_importance)
+        right_child = self._build_tree(features[right_idx], target[right_idx], depth+1, feature_importance=feature_importance)
+        weighted_child_entropy = (
+            (left_idx.sum() / len(target)) * getattr(left_child, 'entropy', 0)
+            + (right_idx.sum() / len(target)) * getattr(right_child, 'entropy', 0)
+        )
+        node = DecisionTreeNode(feature=feature, threshold=threshold, children={"leq": left_child, "gt": right_child})
+        node.entropy = entropy
+        node.info_gain = entropy - weighted_child_entropy
+        return node
 
     def predict_one(self, features):
         node = self.root
         while not node.is_leaf():
-            if node.feature not in features:
-                return getattr(self, '_majority_class', None)
-            node = node.children.get(features[node.feature], node)
+            value = features[node.feature]
+            if node.threshold is not None:
+                if value <= node.threshold:
+                    node = node.children["leq"]
+                else:
+                    node = node.children["gt"]
+            else:
+                node = node.children.get(value)
+                if node is None:
+                    # Fallback: majority class at this node
+                    return Counter([child.value for child in node.children.values() if child.is_leaf()]).most_common(1)[0][0]
         return node.value
 
     def predict(self, x_data):

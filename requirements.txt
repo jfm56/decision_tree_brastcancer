@@ -1,6 +1,7 @@
 numpy
 pandas
 pytest
+pytest-cov
 pylint
 coverage
 scikit-learn # for data loading only, not for modeling

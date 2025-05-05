@@ -13,11 +13,25 @@ This project implements a custom Decision Tree classifier to predict breast canc
 - Summary statistics and confusion-matrix metrics
 - Automated testing (Pytest), code linting (Pylint), CI/CD
 
+## Algorithm Type
+This project uses a **custom Decision Tree classifier** for binary classification (malignant vs. benign). The tree supports both entropy (information gain) and Gini impurity as split criteria. The implementation is fully from scratch (no scikit-learn tree code) and supports:
+- Numeric features and thresholds
+- Recursive tree building
+- Pruning by max depth
+- Flexible splitting criteria ('entropy' or 'gini')
+
 ## Structure
 - `src/` - Source code (preprocessing, model, training)
 - `tests/` - Unit tests
 - `data/` - Dataset location (not versioned)
 - `.github/workflows/` - CI/CD workflows
+
+## Workflow
+1. **Data Preprocessing:** Cleans and bins features, handles missing values, and encodes labels.
+2. **Model Training:** Trains a custom decision tree on the training set using entropy (default) or Gini impurity. Optionally performs grid search for max depth.
+3. **Evaluation:** Computes accuracy, precision, recall, F1 score, and confusion matrix on the test set.
+4. **Visualization:** Generates plots for the decision tree, feature importances, confusion matrix, and feature distributions.
+5. **Reporting:** Compiles all results and visualizations into a single PDF report (`model_report.pdf`).
 
 ## Setup
 ```sh
@@ -39,6 +53,27 @@ pip install -r requirements.txt
 Run from the project root:
 ```sh
 python3 -m src.train
+```
+
+## Parameter Setup Code
+You can configure the main model parameters in `src/train.py`:
+
+```python
+# src/train.py
+from src.decision_tree import DecisionTreeClassifier
+
+# Example parameter setup
+clf = DecisionTreeClassifier(
+    max_depth=3,              # Maximum tree depth
+    criterion='entropy'       # 'entropy' or 'gini' for split criterion
+)
+clf.fit(x_train, y_train)
+```
+
+- **max_depth**: Maximum depth of the decision tree (default: 3)
+- **criterion**: Splitting criterion, either 'entropy' (information gain) or 'gini'
+
+You can modify these parameters directly in `src/train.py` to experiment with different settings.
 ```
 
 ### 3. View your results
