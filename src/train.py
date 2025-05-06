@@ -20,7 +20,10 @@ if __name__ == "__main__":
     if 'id' in df.columns:
         df = df.drop(columns=['id'])
     feature_columns = [col for col in df.columns if col not in ('diagnosis', 'target')]
-    
+
+    # Ensure workflow_screenshots directory exists
+    os.makedirs('workflow_screenshots', exist_ok=True)
+
     # Save data loading workflow
     plt.figure(figsize=(10, 6))
     plt.text(0.1, 0.9, 'Data Loading and Preprocessing Workflow:', fontsize=14, fontweight='bold')
@@ -99,7 +102,7 @@ if __name__ == "__main__":
 
     # 3. Confusion matrix
     print("Plotting confusion matrix...")
-    plot_confusion_matrix(y_test, y_pred, labels=['benign','malignant'])
+    plot_confusion_matrix(y_test, y_pred, labels=['malignant', 'benign'])
 
     # 4. Feature importance
     print("Plotting feature importance...")

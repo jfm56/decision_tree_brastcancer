@@ -11,7 +11,7 @@ This project implements a custom Decision Tree classifier to predict breast canc
 - Print-friendly, multi-page PDF report (all results in one file)
 - Visualizations: tree, confusion matrix, feature importance, distributions, correlation heatmap
 - Summary statistics and confusion-matrix metrics
-- Automated testing (Pytest), code linting (Pylint), CI/CD
+- Clean, dependency-light codebase (no test, lint, or CI/CD files included)
 
 ## Algorithm Type
 This project uses a **custom Decision Tree classifier** for binary classification (malignant vs. benign). The tree supports both entropy (information gain) and Gini impurity as split criteria. The implementation is fully from scratch (no scikit-learn tree code) and supports:
@@ -22,9 +22,7 @@ This project uses a **custom Decision Tree classifier** for binary classificatio
 
 ## Structure
 - `src/` - Source code (preprocessing, model, training)
-- `tests/` - Unit tests
 - `data/` - Dataset location (not versioned)
-- `.github/workflows/` - CI/CD workflows
 
 ## Workflow
 1. **Data Preprocessing:** Cleans and bins features, handles missing values, and encodes labels.
